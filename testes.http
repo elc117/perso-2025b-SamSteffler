@@ -1,0 +1,16 @@
+POST http://localhost:3000/games
+Content-Type: application/json
+
+{
+  "line": 6,
+  "column": 7
+}
+
+###
+
+POST http://localhost:3000/games/1/move
+Content-Type: application/json
+
+{
+  "moveColumn": 0
+}
