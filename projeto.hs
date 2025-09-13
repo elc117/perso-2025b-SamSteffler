@@ -14,7 +14,7 @@ import Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as T
 import Control.Monad.IO.Class (liftIO)
 import System.Environment (lookupEnv)
-import Text.Read (readMaybe)
+import Text.Read (readMaybe, look)
 
 -- corpo para visualizacao do jogo
 data Game = Game
@@ -32,8 +32,8 @@ instance ToJSON Game
 instance FromJSON Game
 
 -- corpo para fazer movimento no jogo
-newtype MoveRequest = MoveRequest
-    { moveColumn :: Int             -- coluna para jogar
+data MoveRequest = MoveRequest
+    { jogoColuna :: Int             -- coluna para jogar
     } deriving (Show, Generic)
 
 instance FromJSON MoveRequest
@@ -108,11 +108,13 @@ inserePeca c p mat =
 -- Either String Game permite retornar erro via String ou o próprio Game atualizado
 realizarJogada :: Int -> Game -> Either String Game
 realizarJogada col jogo
-    | isOver jogo                    = Left "Jogo já está terminado."
-    | col <= 0 || col >= column jogo = Left "Coluna inválida."
+    | isOver jogo                    = Left $ "Jogo já está terminado. Vencedor: " ++ show (winner jogo)
+    | col <= 0 || col > column jogo  = Left "Coluna inválida."
     | checkColuna (col - 1) jogo     = Left "Coluna cheia."
     | otherwise                      = Right atualizaJogada
     where
+        -- linha onde sera inserida a peca
+        linhaVazia = achaLinha (col - 1) (matrix jogo)
         -- guarda matriz atualizada
         matAtualizada = inserePeca (col - 1) (currentPlayer jogo) (matrix jogo)
         -- guarda proximo jogador
@@ -120,19 +122,15 @@ realizarJogada col jogo
         -- atualiza jogo atual
         jogoFeito = jogo { matrix = matAtualizada }
         -- checam vitoria e empate
-        isVitoria = vitoria jogoFeito l col
-            where
-                l = achaLinha (col - 1) (matrix jogo) - 1 -- diminuir 1 pois a peca ja foi inserida
+        isVitoria = vitoria jogoFeito linhaVazia (col - 1)
         isEmpate = empate matAtualizada
         
         -- verifica se houve vitoria ou empate e atualiza o jogo
         atualizaJogada = case isVitoria of
-            Just ganhador  -> jogo { isOver = True
-                            , winner = Just ganhador }
+            Just ganhador  -> jogoFeito { isOver = True, winner = Just ganhador }
             Nothing -> if isEmpate
-                then jogo { isOver = True
-                          , winner = Nothing }
-                else jogo { currentPlayer = proximoJogador }
+                then jogoFeito { isOver = True, winner = Nothing }
+                else jogoFeito { currentPlayer = proximoJogador }
 
 
 
@@ -184,7 +182,52 @@ vitoria jogo l c =
        then Just jogador
        else Nothing
 
+
+-- corpo principal do programa
 main :: IO ()
 main = do
     conn <- open "games.db"
     initDB conn
+    liftIO $ execute_ conn "DELETE FROM game"
+    -- inicializar servidor
+    port <- maybe 3000 read <$> lookupEnv "PORT"
+    putStrLn $ "Starting server on port " ++ show port
+    putStrLn $ "Local website : http://localhost:" ++ show port
+    -- rotas do Scotty
+    scotty port $ do
+        middleware logStdoutDev
+
+        get "/" $ do
+            text "Bem-vindo ao jogo de Connect 4! Use /criajogo para iniciar um novo jogo."
+        -- criar novo jogo
+        post "/criajogo" $ do
+            let jogo = novoJogo 6 7
+            liftIO $ execute_ conn "DELETE FROM game"
+            liftIO $ execute conn "INSERT INTO game (isOver, line, column, matrix, currentPlayer, winner) VALUES (?, ?, ?, ?, ?, ?)"
+                        (isOver jogo, line jogo, column jogo, matrix jogo, currentPlayer jogo, winner jogo)
+            json (T.pack ("Jogo criado com sucesso! Você pode jogar pelo link http://localhost:" ++ show port ++ "/jogo/move/ e a coluna desejada."))
+
+        -- fazer jogada
+        post "/jogo/move" $ do
+            colParam <- jsonData :: ActionM MoveRequest
+            let colunaParam = jogoColuna colParam
+            -- pegar o jogo atual (deve haver apenas um jogo na database)
+            jogos <- liftIO $ query_ conn "SELECT id, isOver, line, column, matrix, currentPlayer, winner FROM game" :: ActionM [Game]
+            if null jogos
+                then status status404 >> json ("Nenhum jogo encontrado. Crie um novo jogo primeiro." :: String)
+                else do
+                    let jogoAtual = head jogos
+                    case realizarJogada colunaParam jogoAtual of
+                        Left errMsg -> status status400 >> json (errMsg :: String)
+                        Right jogoAtualizado -> do
+                            -- atualizar o jogo na database
+                            liftIO $ execute conn "UPDATE game SET isOver = ?, matrix = ?, currentPlayer = ?, winner = ? WHERE id = ?"
+                                (isOver jogoAtualizado, matrix jogoAtualizado, currentPlayer jogoAtualizado, winner jogoAtualizado, gameId jogoAtualizado)
+                            json jogoAtualizado
+
+        -- pegar estado do jogo
+        get "/jogo" $ do
+            jogos <- liftIO $ query_ conn "SELECT id, isOver, line, column, matrix, currentPlayer, winner FROM game" :: ActionM [Game]
+            if null jogos
+                then status status404 >> json ("Nenhum jogo encontrado. Crie um novo jogo primeiro." :: String)
+                else json (head jogos)

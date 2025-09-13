@@ -1,16 +1,20 @@
-POST http://localhost:3000/games
+POST http://localhost:3000/criajogo
+Content-Type: application/json
+
+###
+
+POST http://localhost:3000/jogo/move
 Content-Type: application/json
 
 {
-  "line": 6,
-  "column": 7
+  "jogoColuna": 5
 }
 
 ###
 
-POST http://localhost:3000/games/1/move
+POST http://localhost:3000/jogo/move
 Content-Type: application/json
 
 {
-  "moveColumn": 0
+  "jogoColuna": 4
 }
