@@ -188,6 +188,7 @@ main :: IO ()
 main = do
     conn <- open "games.db"
     initDB conn
+    -- apaga database sempre que iniciar o servidor
     liftIO $ execute_ conn "DELETE FROM game"
     -- inicializar servidor
     port <- maybe 3000 read <$> lookupEnv "PORT"
@@ -198,7 +199,7 @@ main = do
         middleware logStdoutDev
 
         get "/" $ do
-            text "Bem-vindo ao jogo de Connect 4! Use /criajogo para iniciar um novo jogo."
+            text $ T.pack ("Bem-vindo ao jogo de Connect 4! Use http://localhost:" ++ show port ++ "/criajogo para iniciar um novo jogo.")
         -- criar novo jogo
         post "/criajogo" $ do
             let jogo = novoJogo 6 7
