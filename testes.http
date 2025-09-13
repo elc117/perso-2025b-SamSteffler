@@ -1,8 +1,11 @@
+
+#Inicializa novo jogo (reset database)
 POST http://localhost:3000/criajogo
 Content-Type: application/json
 
 ###
 
+#Joga peça na coluna 5
 POST http://localhost:3000/jogo/move
 Content-Type: application/json
 
@@ -12,6 +15,7 @@ Content-Type: application/json
 
 ###
 
+#Joga peça na coluna 4
 POST http://localhost:3000/jogo/move
 Content-Type: application/json
 
@@ -21,5 +25,6 @@ Content-Type: application/json
 
 ###
 
+#Obtém estado do jogo
 GET http://localhost:3000/jogo
 Content-Type: application/json
