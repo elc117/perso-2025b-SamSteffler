@@ -2,16 +2,17 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 import Web.Scotty
-import Network.HTTP.Types.Status (status404, status500)
+import Network.HTTP.Types.Status (status400, status404)
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import Database.SQLite.Simple
 import Database.SQLite.Simple.FromRow
+import Database.SQLite.Simple.ToField
+import Database.SQLite.Simple.FromField
 import Data.Aeson (FromJSON, ToJSON)
 import GHC.Generics (Generic)
 import Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as T
 import Control.Monad.IO.Class (liftIO)
-import Network.Wai.Handler.Warp (HostPreference, defaultSettings, setHost, setPort)
 import System.Environment (lookupEnv)
 import Text.Read (readMaybe)
 
@@ -26,22 +27,20 @@ data Game = Game
     , winner :: Maybe Int       -- vencedor (Null se ninguem ganhou ainda, 1 ou 2 se alguem ganhou)
     } deriving (Show, Generic)
 
--- corpo para fazer movimento no jogo
-data MoveRequest = MoveRequest
-    { column :: Int             -- coluna para jogar
-    } deriving (Show, Generic)
 
-instance FromJSON Game
 instance ToJSON Game
+instance FromJSON Game
+
+-- corpo para fazer movimento no jogo
+newtype MoveRequest = MoveRequest
+    { moveColumn :: Int             -- coluna para jogar
+    } deriving (Show, Generic)
 
 instance FromJSON MoveRequest
 
--- interpreta a linha da database para o corpo do jogo
-instance FromRow Game where
-    fromRow = Game <$> field <*> field <*> field <*> field <*> field <*> field
-
 -- interpreta a matriz do jogo de [[Int]] para TEXT para escrita na base de dados
 instance ToField [[Int]] where
+    toField :: [[Int]] -> SQLData
     toField = toField . T.pack . show
 
 -- interpreta a matriz do jogo de TEXT para [[Int]] para leitura na base de dados
@@ -52,6 +51,11 @@ instance FromField [[Int]] where
             Just val -> return val
             -- retorna erro com o campo original
             Nothing  -> returnError ConversionFailed f "Matriz nao pode ser convertida"
+
+-- interpreta a linha da database para o corpo do jogo
+instance FromRow Game where
+    fromRow :: RowParser Game
+    fromRow = Game <$> field <*> field <*> field <*> field <*> field <*> field <*> field
 
 -- inicializa a base de dados dos jogos
 initDB :: Connection -> IO ()
@@ -96,7 +100,7 @@ inserePeca c p mat =
     let l = achaLinha c mat
     in if l == -1
         -- posicao invalida pois coluna esta cheia, retornar matriz original (redundancia)
-        then mat 
+        then mat
         -- fazer movimento: copia as linhas antes de l, insere peca
         -- na linha l posicao c e copia o restante das linhas depois de l
         else take l mat ++ [take c (mat !! l) ++ [p] ++ drop (c + 1) (mat !! l)] ++ drop (l + 1) mat
@@ -108,10 +112,77 @@ realizarJogada col jogo
     | col <= 0 || col >= column jogo = Left "Coluna inválida."
     | checkColuna (col - 1) jogo     = Left "Coluna cheia."
     | otherwise                      = Right atualizaJogada
-    where 
+    where
+        -- guarda matriz atualizada
         matAtualizada = inserePeca (col - 1) (currentPlayer jogo) (matrix jogo)
+        -- guarda proximo jogador
         proximoJogador = if currentPlayer jogo == 1 then 2 else 1
-        -- criar logica de vitoria
+        -- atualiza jogo atual
+        jogoFeito = jogo { matrix = matAtualizada }
+        -- checam vitoria e empate
+        isVitoria = vitoria jogoFeito l col
+            where
+                l = achaLinha (col - 1) (matrix jogo) - 1 -- diminuir 1 pois a peca ja foi inserida
+        isEmpate = empate matAtualizada
+        
+        -- verifica se houve vitoria ou empate e atualiza o jogo
+        atualizaJogada = case isVitoria of
+            Just ganhador  -> jogo { isOver = True
+                            , winner = Just ganhador }
+            Nothing -> if isEmpate
+                then jogo { isOver = True
+                          , winner = Nothing }
+                else jogo { currentPlayer = proximoJogador }
+
+
+
+-- takewhile pega so elementos enquanto forem iguais a p depois para
+consecutivo :: [Int] -> Int -> [Int]
+consecutivo arr p = takeWhile (== p) arr
+
+-- checagem de vitoria horizontal
+vitoriaHorizontal :: [[Int]] -> Int -> Int -> Int -> Bool
+vitoriaHorizontal mat l c p = (1 + length horesq + length hordir) >= 4
+    where
+        horesq = consecutivo (reverse (take c (mat !! l))) p
+        hordir = consecutivo (drop (c + 1) (mat !! l)) p
+
+-- checagem de vitoria vertical
+vitoriaVertical :: [[Int]] -> Int -> Int -> Int -> Bool
+vitoriaVertical mat l c p = (1 + length vertcima + length vertbaixo) >= 4
+    where
+        coluna  = [row !! c | row <- mat]
+        vertcima = consecutivo (reverse (map (!! c) (take l mat))) p
+        vertbaixo = consecutivo (map (!! c) (drop (l + 1) mat)) p
+
+-- checagem de vitoria diagonal
+vitoriaDiag :: [[Int]] -> Int -> Int -> Int -> Bool
+vitoriaDiag mat l c p = (1 + length diag1cima + length diag1baixo >= 4) ||
+                        (1 + length diag2cima + length diag2baixo >= 4)
+    where
+        -- diagonal principal para cima (indices diminuem)
+        diag1cima = consecutivo [mat !! (l - i) !! (c - i) | i <- [1..min l c], (l - i) >= 0, (c - i) >= 0] p
+        -- diagonal principal para baixo (indices aumentam)
+        diag1baixo = consecutivo [mat !! (l + i) !! (c + i) | i <- [1..min (length mat - l - 1) (length (head mat) - c - 1)], (l + i) < length mat, (c + i) < length (head mat)] p
+        -- diagonal secundaria para cima (vertical diminui, horizontal aumenta)
+        diag2cima = consecutivo [mat !! (l - i) !! (c + i) | i <- [1..min l (length (head mat) - c - 1)], (l - i) >= 0, (c + i) < length (head mat)] p
+        -- diagonal secundaria para baixo (vertical aumenta, horizontal diminui)
+        diag2baixo = consecutivo [mat !! (l + i) !! (c - i) | i <- [1..min (length mat - l - 1) c], (l + i) < length mat, (c - i) >= 0] p
+
+-- checagem de empate
+empate :: [[Int]] -> Bool
+-- concatena matriz bidimensional em unidimencional e aplica funcao notElem
+empate mat = 0 `notElem` concat mat
+
+-- retorna jogador se tiver vitoria senao retorna Nothing
+vitoria :: Game -> Int -> Int -> Maybe Int
+vitoria jogo l c =
+    let jogador = currentPlayer jogo
+    in if vitoriaHorizontal (matrix jogo) l c jogador ||
+          vitoriaVertical (matrix jogo) l c jogador ||
+          vitoriaDiag (matrix jogo) l c jogador
+       then Just jogador
+       else Nothing
 
 main :: IO ()
 main = do
