@@ -24,8 +24,8 @@ data Game = Game
     , column :: Int             -- total de colunas
     , matrix :: [[Int]]         -- matriz do jogo (0 = vazio, 1 = jogador 1, 2 = jogador 2)
     , currentPlayer :: Int      -- jogador atual (1 ou 2)
-    , winner :: Maybe Int       -- vencedor (Null se ninguem ganhou ainda, 1 ou 2 se alguem ganhou)
-    } deriving (Show, Generic)
+    , winner :: Maybe Int       -- vencedor (Nothing se ninguem ganhou ainda, 1 ou 2 se alguem ganhou)
+    } deriving (Show, Generic, Eq)
 
 
 instance ToJSON Game

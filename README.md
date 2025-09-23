@@ -24,3 +24,4 @@ A função ``realizaJogada`` foi a responsável por lidar com a lógica de checa
 Foi planejada a criação de uma página web local como front-end para jogar Connect 4, mas apesar de enviar a requisição ao servidor corretamente, por conta da política CORS o navegador bloqueava a mensagem de reposta. Por isso, foi decidido testar o jogo utilizando a extensão [REST Client](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) para se comunicar com o servidor. 
 
 ---
+**(23/09/2025):** adicionada lógica de teste das funções principais para o funcionamento do jogo. Ela verifica se o jogo é inicializado corretamente, se a coluna é válida, qual a linha em que uma nova peça pode ser inserida,alguns casos de vitória do jogador, e simulação de jogadas. Alguns itens do projeto principal foram alterados para permitir o uso de ```assertEqual``` de forma correta.
