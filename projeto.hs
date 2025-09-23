@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
-
+module Projeto where
 import Web.Scotty
 import Network.HTTP.Types.Status (status400, status404)
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
