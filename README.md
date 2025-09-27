@@ -28,3 +28,5 @@ Foi planejada a criação de uma página web local como front-end para jogar Con
 ```
 runhaskell projetoTester.hs
 ```
+---
+**(26/09/2025):** foi adicionado uma página web em Vue para interagir com o jogo via navegador. Basta apenas rodar ```npm run dev``` na pasta onde o projeto em Vue está contido e ```runhaskell .\Projeto.hs``` para inicializar o servidor. As mudanças realizadas no projeto em Haskell foram executadas para habilitar a resposta sem o bloqueio CORS.

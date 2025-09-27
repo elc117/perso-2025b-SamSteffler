@@ -14,7 +14,8 @@ import Data.Text.Lazy (Text)
 import qualified Data.Text.Lazy as T
 import Control.Monad.IO.Class (liftIO)
 import System.Environment (lookupEnv)
-import Text.Read (readMaybe, look)
+import Text.Read (readMaybe)
+import Network.Wai.Middleware.Cors
 
 -- corpo para visualizacao do jogo
 data Game = Game
@@ -182,6 +183,19 @@ vitoria jogo l c =
        then Just jogador
        else Nothing
 
+-- CORS policy to allow requests from Vue frontend
+corsPolicy = cors (const $ Just policy)
+  where
+    policy = CorsResourcePolicy
+      { corsOrigins = Just (["http://localhost:5173"], True)
+      , corsMethods = ["GET", "POST", "OPTIONS"]
+      , corsRequestHeaders = ["Content-Type"]
+      , corsExposedHeaders = Nothing
+      , corsMaxAge = Nothing
+      , corsVaryOrigin = False
+      , corsRequireOrigin = False
+      , corsIgnoreFailures = False
+      }
 
 -- corpo principal do programa
 main :: IO ()
@@ -190,12 +204,12 @@ main = do
     initDB conn
     -- apaga database sempre que iniciar o servidor
     liftIO $ execute_ conn "DELETE FROM game"
-    -- inicializar servidor
     port <- maybe 3000 read <$> lookupEnv "PORT"
     putStrLn $ "Starting server on port " ++ show port
     putStrLn $ "Local website : http://localhost:" ++ show port
     -- rotas do Scotty
     scotty port $ do
+        middleware corsPolicy
         middleware logStdoutDev
 
         get "/" $ do
